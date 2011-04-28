@@ -217,7 +217,7 @@ class Tasclient(object):
 				Log.Error("Login failed ( %s ), trying to register..." % ' '.join(args))
 				Log.notice("Closing Connection")
 				self.socket.close()
-				self.fl.register = True
+				self.flags.register = True
 				self.connect(self.lastserver,self.lastport)
 
 			if command == "REGISTRATIONACCEPTED":
