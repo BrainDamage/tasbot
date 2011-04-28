@@ -95,7 +95,7 @@ class Tasclient(object):
 		self.lpo = 0.0
 		self.users = dict()
 		self.socket = None
-		
+
 	def connect(self,server,port):
 		port = int(port)
 		self.lastserver = server
@@ -142,7 +142,7 @@ class Tasclient(object):
 		self.password = password
 		self.channels = []
 		self.receive()
-		
+
 	def register(self,username,password):
 		try:
 			Log.notice("Trying to register account")
@@ -150,7 +150,7 @@ class Tasclient(object):
 		except Exception,e:
 			Log.Error("Cannot send register command")
 			Log.Except( e )
-			
+
 	def leave(self,channel): #Leaves a channel
 		if channel in self.channels:
 			try:
@@ -169,7 +169,7 @@ class Tasclient(object):
 	def say(self,channel,phrase):
 		self.join(channel)
 		self.socket.send("SAY %s %s\n" % (channel,phrase) )
-		
+
 	def sayex(self,channel,phrase):
 		self.join(channel)
 		self.socket.send("SAYEX %s %s\n" % (channel,phrase) )
@@ -283,20 +283,19 @@ class Tasclient(object):
 						Log.Error("Invalid CLIENTSTATUS: No such user <%s>" % args[0])
 
 	def receive(self): #return commandname & args
-		buf = ""
+		tempbuf = "void"
 		try:
-			while not buf.strip("\r ").endswith("\n"):
-				#print "Receiving incomplete command..."
-				nbuf =  self.socket.recv(512)
-				if nbuf == "":
-					return 1
-				buf += nbuf
+			while len(tempbuf) > 0:
+				tempbuf =  self.socket.recv(512)
+				self.buf += tempbuf
 		except Exception,e :
 			Log.Except( e )
 			return 1 # Connection broken
-		commands = buf.strip("\r ").split("\n")
-		for cmd in commands:
-			c = cmd.split(" ")[0].upper()
-			args = cmd.split(" ")[1:]
-			self.parsecommand(c,args)
+		npos = self.buf.find("\n")
+		while npos > 0:
+			cmd = self.buf[:npos-1].split(" ")
+			self.buf = self.buf[npos+1:]
+			self.parsecommand(cmd[0].upper(),cmd[1:])
+			npos = self.buf.find("\n")
 		return 0
+
