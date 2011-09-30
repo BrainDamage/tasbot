@@ -5,6 +5,7 @@ import datetime
 import logging
 import logging.handlers
 import os.path
+
 from color_formatter import *
 
 loggingLevelMapping = {
@@ -18,9 +19,11 @@ loggingLevelMapping = {
 		}
 
 class ILogger(object):
+	"""Logging interface class that (somewhat) preserves backward compat
+	with the old, crappy, handcrafted logging"""
 	def __init__(self,prefix=None):
 		self.default_prefix = prefix
-		
+
 	def _prepare(self,msg,prefix):
 		if prefix:
 			msg = '[%s] %s'%(prefix,msg)
@@ -38,11 +41,11 @@ class ILogger(object):
 		self._logger.debug( self._prepare( msg,prefix ) )
 	def info(self, msg,prefix=None):
 		self._logger.info( self._prepare( msg,prefix ) )
-		
+
 	def exception(self,e):
 		#TODO needs prefix handling
 		self._logger.exception( e )
-	
+
 	def loaded(self,t):
 		self.info( t, "LOADED" )
 
@@ -59,16 +62,20 @@ class ILogger(object):
 		self.Error( t,"BAD" )
 
 class CLog(ILogger):
-
+	"""Main Logging instance, forwards al logging calls to the stdlib's logging
+	via a RotatingFileHandler and proper stream formatters"""
 	def __init__(self):
-		ILogger.__init__(self,None)
+		"""Since this is called at module import time we cannot do all
+		we'd want here, see init for the rest"""
+		super(CLog,self).__init__(prefix=None)
 		self._initialised = False
 		self._FORMAT = '$BOLD%(levelname)s$RESET - %(asctime)s - %(message)s'
-		
+
 	def init(self, logfile_name, level='info', stdout_log=True ):
+		"""All the setup that is possible only after this module was imported."""
 		logfile_name = logfile_name
-		print 'fn',logfile_name
-		self.filehandler = logging.handlers.RotatingFileHandler(logfile_name, maxBytes=1048576, backupCount=5) # 1MB files
+		self.filehandler = logging.handlers.RotatingFileHandler(logfile_name,
+								maxBytes=1048576, backupCount=5) # 1MB files
 		if stdout_log:
 			self.streamhandler =  logging.StreamHandler(sys.stderr)
 		else:
@@ -84,19 +91,21 @@ class CLog(ILogger):
 			self._logger.setLevel( loggingLevelMapping[level] )
 		except KeyError:
 			self._logger.setLevel( logging.ERROR )
-			self._logger.error('unkown log level %s requested, defaulting to logging.ERROR' % level)
-		
+			self._logger.error('unknown log level %s requested, defaulting to logging.ERROR' % level)
+
 		self._initialised = True
 		self._logger.info( 'session started' )
-	
-	def getPluginLogger(self, name):
-		return PrefixedLogger( self, name )
 
-class PrefixedLogger(ILogger):
-	def __init__(self, clog,name):
-		ILogger.__init__(self, 'PL %s'%name)
+	def getPluginLogger(self, name):
+		return PluginLogger( self, name )
+
+
+class PluginLogger(ILogger):
+	"""ILogger with prefix based on given plugin name.
+	Shares the backend with its parent clog."""
+	def __init__(self, clog,plugin):
+		super(PluginLogger,self).__init__(prefix='PL %s'%plugin)
 		self._logger = clog._logger
 		self._initialised = True
 
 Log = CLog()
-

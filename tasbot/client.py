@@ -1,10 +1,7 @@
-# -*- coding: utf-8 -*-
+"""Code for interaction with lobby server/protocol."""
+
 import socket
-import string
-import re
 import time
-import utilities
-import sys
 import traceback
 
 from utilities import *
@@ -12,6 +9,7 @@ from customlog import Log
 
 
 class User:
+	"""Model of an agent in the lobby protocol"""
 	def __init__(self, username, id, country, cpu):
 		self.username = username
 		self.id = id
@@ -154,8 +152,8 @@ class Tasclient(object):
 
 	def login(self, username, password, client, cpu, lanip="*"):
 		Log.notice("Trying to login with username %s " % (username))
-		lanip = self.socket.getsockname()[0]
-		#print "LOGIN %s %s %i * %s\n" % (username,password,cpu,client)
+		#lanip = self.socket.getsockname()[0]
+		Log.debug("LOGIN %s %s %i %s %s\n" % (username,password,cpu,lanip,client))
 		try:
 			self.socket.send("LOGIN %s %s %i %s %s\t0\t%s\n" %
 							(username, password, cpu, lanip, client, "a sp"))
@@ -200,6 +198,15 @@ class Tasclient(object):
 
 	def saypm(self, user, phrase):
 		self.socket.send("SAYPRIVATE %s %s\n" % (user, phrase))
+
+	def send_raw(self, command):
+		self.socket.send(command)
+
+	def say_pm_or_channel(self, trigger_command, pm_or_channel, phrase):
+		verb = trigger_command.replace('SAID', 'SAY')
+		if verb.find('PRIVATE') == -1:
+			self.join(pm_or_channel)
+		self.send_raw("%s %s %s\n" % (verb, pm_or_channel, phrase))
 
 	def ping(self):
 		if self.error == 1:

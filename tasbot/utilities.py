@@ -1,3 +1,5 @@
+"""Bitfield conversion helpers"""
+
 import os
 
 
@@ -98,7 +100,7 @@ def getcolor(status):
 def createFileIfMissing(filename):
 	if not os.path.exists(filename):
 		open(filename, 'w').close()
-		
+
 def parselist(string,sep):
 	if string.count(sep) < 1:
 		return [string]

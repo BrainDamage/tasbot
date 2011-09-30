@@ -5,8 +5,11 @@ from tasbot.config import *
 
 
 class Main(IPlugin):
+	"""Automatically join all channels named in config.
+	[join_channels]
+	channels=springlobby,main,newbies"""
 	def __init__(self, name, tasclient):
-		IPlugin.__init__(self, name, tasclient)
+		super(Main,self).__init__(name, tasclient)
 		self.joined_channels = 0
 		self.admins = []
 		self.channels = []
@@ -40,5 +43,5 @@ class Main(IPlugin):
 
 	def onload(self, tasc):
 		self.app = tasc.main
-		self.admins = self.app.config.GetOptionList('tasbot', "admins")
-		self.channels = self.app.config.GetOptionList('join_channels', "channels")
+		self.admins = self.app.config.get_optionlist('tasbot', "admins")
+		self.channels = self.app.config.get_optionlist('join_channels', "channels")

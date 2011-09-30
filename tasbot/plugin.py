@@ -1,16 +1,23 @@
-# -*- coding: utf-8 -*-
+"""plugin loader/handler and base classes for common plugin functionality"""
+
 import sys
 import traceback
 import inspect
 import ctypes
 import threading
+import functools
+from collections import defaultdict
 
 from customlog import Log
 import plugins
+from decorators import check_and_mark_decorated
+from commands import server as ALL_COMMANDS
+
+CHAT_COMMANDS = ('SAID', 'SAIDPRIVATE', 'SAIDEX', 'SAIDPRIVATEEX')
 
 
 def _async_raise(tid, exctype):
-	'''Raises an exception in the threads with id tid (never seen working)'''
+	"""Raises an exception in the threads with id tid (note: never seen working)"""
 	if not inspect.isclass(exctype):
 		raise TypeError("Only types can be raised (not instances)")
 	res = ctypes.pythonapi.PyThreadState_SetAsyncExc(tid,
@@ -35,6 +42,7 @@ class PluginThread(threading.Thread):
 
 
 class ThreadContainer(object):
+	"""Base for classes that need to manage a runtime variant number of child threads"""
 	def __init__(self):
 		super(ThreadContainer, self).__init__()
 		self.dying = False
@@ -62,7 +70,7 @@ class ThreadContainer(object):
 
 	def start_thread(self, func, *args):
 		"""run a given function with args in a
-		new thread that is added to an internal list"""
+		new thread that is added to the internal list"""
 		self.threads.append(PluginThread(func, *args))
 		#app exits if only daemon threads are left alive
 		self.threads[-1].daemon = True
@@ -76,6 +84,98 @@ class IPlugin(ThreadContainer):
 		self.tasclient = tasclient
 		self.name = name
 		self.logger = Log.getPluginLogger(name)
+		self.commands = defaultdict(list)
+		#this registers all cmd_* where * matches an actualLobby command in our command dict
+		foreign_cmd_count = 0
+		cmd_count = 0
+		for f in filter( lambda f: f.startswith('cmd_'), dir(self)):
+			try:
+				name_tokens = f.split('_')
+				cmd = name_tokens[1].upper()
+				if len(name_tokens) >= 3 and cmd in CHAT_COMMANDS:
+					self.commands[cmd].append(('!%s'%name_tokens[2],f))
+				elif cmd in ALL_COMMANDS:
+					self.commands[cmd].append((None,f))
+				else:
+					self.logger.error('trying to register function for unknown command %s'%cmd)
+				foreign_cmd_count += f != 'cmd_said_help' and f != 'cmd_saidprivate_help'
+				cmd_count += 1
+			except IndexError,e:
+				self.logger.debug(f)
+				self.logger.exception(e)
+		#if no oncommand is present in derived class we can safely move our generic on in
+		if 'oncommandfromserver' in dir(self):
+			if foreign_cmd_count:
+				self.logger.error('mixing old and new style command handling')
+		else:
+			self.oncommandfromserver = self._oncommandfromserver
+		self.logger.debug('registered %d commands' % (cmd_count - foreign_cmd_count))
+
+	def _trim_chat_args(self, _args, tas_command):
+		""" remove cruft from SAID* responses
+			SAID[EX] channame username message becomes
+			SAID[EX] channame message[1:]
+			and
+			SAIDPRIVATE[EX] userame message becomes
+			SAIDPRIVATE[EX] username message[1:]
+		"""
+		args = _args[:]
+		del args[1]
+		if tas_command.find('PRIVATE') == -1:
+			del args[1]
+		return args
+
+	def cmd_said_help(self, args, tas_command):
+		"""Respond with a list of available chat commands or
+		a command specific help
+		"""
+		args = self._trim_chat_args(args, tas_command)
+		#either way we're left with: user/channel [item]
+		target = args[0]
+		if len(args) > 1:
+			helpitem = args[1]
+			for command in CHAT_COMMANDS:
+				for trigger,funcname in self.commands[command]:
+					#allow both '!item' and 'item' to trigger the help
+					if trigger == None or trigger.replace('!','') != helpitem.replace('!',''):
+						continue
+					try:
+						func = getattr(self, funcname)
+						self.tasclient.say_pm_or_channel(tas_command, target, func.__doc__)
+						return
+					except Exception,e:
+						self.logger.exception(e)
+						continue
+			self.tasclient.say_pm_or_channel(tas_command, target, 'No further help available for \'%s\'.' % helpitem)
+		else:
+			self.tasclient.say_pm_or_channel(tas_command, target, 'available commands:')
+			for command in CHAT_COMMANDS:
+				for trigger,funcname in self.commands[command]:
+					if trigger == '!help':
+						continue
+					func = getattr(self,funcname)
+					if 'admin_only' in dir(func):
+						self.tasclient.say_pm_or_channel(tas_command, target, trigger + ' (admin-only)')
+					else:
+						self.tasclient.say_pm_or_channel(tas_command, target, trigger)
+			self.tasclient.say_pm_or_channel(tas_command, target, 'for further help try "!help [item]"')
+
+	cmd_saidprivate_help = cmd_said_help
+
+	def _oncommandfromserver(self, command, args, socket):
+		"""Automagically calls registered function matching command and args."""
+		try:
+			for trigger,funcname in self.commands[command]:
+				do_call = (trigger == None) or (
+					(command.find('PRIVATE') == -1 and trigger == args[2]) or
+					(command.find('PRIVATE') > -1 and trigger == args[1]))
+				if do_call:
+					func = getattr(self, funcname)
+					func(args, command)
+		except KeyError, k:
+			self.logger.exception(k)
+		except Exception, e:
+			self.logger.exception(e)
 
 
 class PluginHandler(object):
@@ -94,13 +194,20 @@ class PluginHandler(object):
 			return
 		try:
 			code = __import__(name)
-		except ImportError, imp:
-			Log.error("Cannot load plugin %s" % name)
-			Log.exception(imp)
-			return
+		except ImportError:
+			Log.debug('trying to load plugin %s from plugins subdir' % name )
+			try:
+				pname = 'tasbot.plugins.%s' % name
+				__import__(pname)
+				code = sys.modules[pname]
+			except ImportError, imp:
+				Log.error("Cannot load plugin %s" % name)
+				Log.exception(imp)
+				raise SystemExit(1)
 		try:
 			self.plugins.update([(name, code.Main(name, tasc))])
 		except TypeError, t:
+			Log.exception(t)
 			self.plugins.update([(name, code.Main())])
 			Log.error('loaded old-style plugin %s. Please derive from IPlugin' % name)
 		self.plugins[name].socket = tasc.socket
@@ -175,13 +282,13 @@ class PluginHandler(object):
 			return
 		Log.loaded("Plugin " + name)
 
-	def forall(self, func_name, *args):
+	def forall(self, func_name, *args, **kwargs):
 		""" execute a given function(name) on all plugins that expose it"""
 		for name, plugin in filter(lambda (name, plugin):
 				func_name in dir(plugin), self.plugins.iteritems()):
 			try:
 				func = getattr(plugin, func_name)
-				func(*args)
+				func(*args, **kwargs)
 			except SystemExit:
 				raise SystemExit(0)
 			except Exception, e:
