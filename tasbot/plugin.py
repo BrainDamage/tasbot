@@ -13,7 +13,7 @@ import plugins
 from decorators import check_and_mark_decorated
 from commands import server as ALL_COMMANDS
 
-CHAT_COMMANDS = ('SAID', 'SAIDPRIVATE', 'SAIDEX', 'SAIDPRIVATEEX')
+CHAT_COMMANDS = ('SAID', 'SAIDPRIVATE', 'SAIDEX', 'SAIDPRIVATEEX', 'SAIDBATTLE', 'SAIDBATTLEEX')
 
 
 def _async_raise(tid, exctype):
@@ -110,6 +110,11 @@ class IPlugin(ThreadContainer):
 		else:
 			self.oncommandfromserver = self._oncommandfromserver
 		self.logger.debug('registered %d commands' % (cmd_count - foreign_cmd_count))
+		def us_compare(a, b):
+			"""this compare prefers said commands with triggers, avoiding calling said before said_trigger"""
+			return b[1].count('_') - a[1].count('_') 
+		for cmd, func_list in self.commands.iteritems():
+			self.commands[cmd] = sorted(func_list, cmp=us_compare)
 
 	def _trim_chat_args(self, _args, tas_command):
 		""" remove cruft from SAID* responses
@@ -166,12 +171,17 @@ class IPlugin(ThreadContainer):
 		"""Automagically calls registered function matching command and args."""
 		try:
 			for trigger,funcname in self.commands[command]:
+				private = command.find('SAIDPRIVATE') > -1 and len(args) > 0
+				battle  = command.find('SAIDBATTLE') > -1 and len(args) > 1
 				do_call = (trigger == None) or (
-					(command.find('PRIVATE') == -1 and trigger == args[2]) or
-					(command.find('PRIVATE') > -1 and trigger == args[1]))
+					(battle and trigger == args[0])
+					(private and trigger == args[1]) or
+					(not (private or battle) and len(args) > 2 and trigger == args[2]))
 				if do_call:
 					func = getattr(self, funcname)
 					func(args, command)
+					#we rely on properly ordered self.commands[command] list
+					break
 		except KeyError, k:
 			self.logger.exception(k)
 		except Exception, e:

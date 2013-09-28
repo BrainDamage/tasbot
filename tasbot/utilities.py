@@ -1,6 +1,9 @@
 """Bitfield conversion helpers"""
 
 import os
+import base64
+import hashlib
+import binascii
 
 
 def getrank(status):
@@ -109,3 +112,8 @@ def parselist(string,sep):
 	for i in j:
 		l.append(os.path.expandvars(i.strip()))
 	return l
+
+def hash_password(password):
+		m = hashlib.md5()
+		m.update(password)
+		return base64.b64encode(binascii.a2b_hex(m.hexdigest()))

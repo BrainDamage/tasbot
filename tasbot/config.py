@@ -15,10 +15,12 @@ class Config(object):
 	that mostly adds defaults and list-value handling
 	"""
 
-	def __init__(self, filename):
+	def __init__(self, filename='Main.conf'):
 		super(Config,self).__init__()
 		self._filename = filename
 		self._config = ConfigParser()
+		#make keys case sensitive
+		self._config.optionxform = str
 		self.has_option = self._config.has_option
 		self.set = self._config.set
 		try:
@@ -58,7 +60,7 @@ class Config(object):
 
 	def get_optionlist(self, section, key, seperator=',', default=[]):
 		try:
-			return self._parselist(self._config.get(section, key), seperator)
+			return Config.parselist(self._config.get(section, key), seperator)
 		except Exception, e:
 			Log.error('Error getting value list for key %s in section %s' %
 							(key, section))
@@ -75,7 +77,8 @@ class Config(object):
 		with open(filename, 'wb') as cfile:
 			self._config.write(cfile)
 
-	def _parselist(self, string, sep):
+	@classmethod
+	def parselist(cls,string, sep):
 		if string.count(sep) < 1:
 			return [string]
 		return [os.path.expandvars(token.strip()) for token in string.split(sep)]
@@ -88,4 +91,8 @@ class Config(object):
 			Log.error('Config option %s in section [%s] must be on of "1,yes,true,on" or "0,no,false,off"'%(section,key))
 		except Exception, e:
 			Log.exception(e)
-		return default
+		return default		
+
+	def items(self,section):
+		return self._config.items(section)
+

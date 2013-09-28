@@ -59,7 +59,7 @@ class ILogger(object):
 		self.info( t, "GOOD" )
 
 	def bad(self,t):
-		self.Error( t,"BAD" )
+		self.error( t,"BAD" )
 
 class CLog(ILogger):
 	"""Main Logging instance, forwards al logging calls to the stdlib's logging

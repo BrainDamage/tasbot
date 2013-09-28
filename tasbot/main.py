@@ -3,12 +3,9 @@
 import os
 import sys
 import string
-import base64
-import hashlib
 import time
 import thread
 import traceback
-import binascii
 import atexit
 
 from customlog import *
@@ -16,6 +13,7 @@ from daemon import Daemon
 import config
 import client
 import plugin
+import utilities
 
 
 class MainApp(Daemon, plugin.ThreadContainer):
@@ -72,18 +70,14 @@ class MainApp(Daemon, plugin.ThreadContainer):
 			return
 		if self.verbose:
 			Log.notice("Logging in...")
-		m = hashlib.md5()
-		m.update(self.config.get('tasbot', "password"))
-		phash = base64.b64encode(binascii.a2b_hex(m.hexdigest()))
+		phash = utilities.hash_password(self.config.get('tasbot', "password"))
 		self.tasclient.login(self.config.get('tasbot', "nick"), phash,
 				"Newbot", 2400, self.config.get('tasbot', "lanip", "*"))
 
 	def register(self, username, password):
 		"""register new account on tasserver"""
-		m = hashlib.md5()
-		m.update(self.config.get('tasbot', "password"))
-		self.tasclient.register(self.config.get('tasbot', "nick"),
-				base64.b64encode(binascii.a2b_hex(m.hexdigest())))
+		phash = utilities.hash_password(self.config.get('tasbot', "password"))
+		self.tasclient.register(self.config.get('tasbot', "nick"), phash)
 
 	def destroy(self):
 		"""deprecated"""

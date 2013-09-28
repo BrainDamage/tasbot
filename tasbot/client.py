@@ -6,71 +6,8 @@ import traceback
 
 from utilities import *
 from customlog import Log
-
-
-class User:
-	"""Model of an agent in the lobby protocol"""
-	def __init__(self, username, id, country, cpu):
-		self.username = username
-		self.id = id
-		self.country = country
-		self.cpu = cpu
-		self.afk = False
-		self.ingame = False
-		self.mod = False
-		self.rank = 0
-		self.bot = False
-		self.battleid = -1
-
-	def clientstatus(self, status):
-		self.afk = bool(getaway(int(status)))
-		self.ingame = bool(getingame(int(status)))
-		self.mod = bool(getmod(int(status)))
-		self.bot = bool(getbot(int(status)))
-		self.rank = getrank(status) - 1
-
-
-class ServerEvents:
-	def onconnected(self):
-		Log.good("Connected to TASServer")
-
-	def onconnectedplugin(self):
-		Log.good("Connected to TASServer")
-
-	def ondisconnected(self):
-		Log.bad("Disconnected")
-
-	def onmotd(self, content):
-		Log.info("[MOTD] %s" % content)
-
-	def onsaid(self, channel, user, message):
-		Log.info("[CHANNEL] %s: <%s> %s" % (channel, user, message))
-
-	def onsaidex(self, channel, user, message):
-		Log.info("[CHANNELEX] %s: <%s> %s" % (channel, user, message))
-
-	def onsaidprivate(self, user, message):
-		Log.info("[PRIVATE] <%s> %s" % (user, message))
-
-	def onloggedin(self, socket):
-		Log.info("[LOGIN] successful")
-
-	def onpong(self):
-		#print blue+"PONG"+normal
-		pass
-
-	def oncommandfromserver(self, command, args, socket):
-		#print yellow+"From Server: "+str(command)+" Args: "+str(args)+normal
-		pass
-
-	def onexit(self):
-		pass
-
-
-class Flags:
-	norecwait = False
-	register = False
-
+from clientobjects import (User, Channel, ChannelList,
+			ServerEvents, Flags)
 
 class Tasclient(object):
 	"""the main interaction with server class"""
@@ -107,7 +44,7 @@ class Tasclient(object):
 	def __init__(self, app):
 		self.events = ServerEvents()
 		self.main = app
-		self.channels = []
+		self.channels = ChannelList()
 		self.flags = Flags()
 		self.error = 0
 		self.lp = 0.0
@@ -162,7 +99,7 @@ class Tasclient(object):
 			Log.exception(e)
 		self.uname = username
 		self.password = password
-		self.channels = []
+		self.channels = ChannelList()
 		self.receive()
 
 	def register(self, username, password):
@@ -217,12 +154,18 @@ class Tasclient(object):
 		except Exception:
 			Log.error("Cannot send ping command")
 
+	def _user_id(self,nick):
+		try:
+			return self.users[nick].id
+		except KeyError:
+			return -1
+
 	def parsecommand(self, command, args):
 		if command.strip() != "":
 			self.events.oncommandfromserver(command, args, self.socket)
 			if command == "JOIN" and len(args) >= 1:
 				if not args[0] in self.channels:
-					self.channels.append(args[0])
+					self.channels.add(args[0])
 					Log.good("Joined #%s" % args[0])
 			if command == "FORCELEAVECHANNEL" and len(args) >= 2:
 				if args[0] in self.channels:
@@ -232,12 +175,23 @@ class Tasclient(object):
 					Log.error("I've been kicked from a channel that i haven't joined")
 			if command == "TASSERVER":
 				Log.good("Connected to server")
-
 				if self.flags.register:
 					self.register(self.uname, self.password)
 					self.receive()
 				else:
 					self.events.onconnected()
+			if command == 'LEFT':
+				chan = args[0]
+				nick = args[1]
+				self.channels[chan].del_user(self.users[nick])
+			if command == 'JOINED':
+				chan = args[0]
+				nick = args[1]
+				self.channels[chan].add_user(self.users[nick])
+			if command == 'CLIENTS':
+				chan = args[0]
+				for nick in args[1:]:
+					self.channels[chan].add_user(self.users[nick])
 			if command == "AGREEMENTEND":
 				Log.notice("accepting agreement")
 				self.socket.send("CONFIRMAGREEMENT\n")
@@ -302,6 +256,7 @@ class Tasclient(object):
 			if command == "REMOVEUSER":
 				if len(args) == 1:
 					if args[0] in self.users:
+						self.channels.clear_user(self.users[args[0]])
 						del self.users[args[0]]
 					else:
 						Log.error("Invalid REMOVEUSER Command: no such user %s" % args[0])
